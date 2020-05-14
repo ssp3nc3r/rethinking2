@@ -1,0 +1,303 @@
+---
+title: "rethinking2"
+author: "Scott Spencer"
+date: "5/14/2020"
+output: 
+  html_document: 
+    fig_width: 5
+    fig_caption: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	error = FALSE,
+	warning = FALSE,
+	results = FALSE,
+	message = FALSE,
+	cache = TRUE
+)
+```
+
+# Preface
+
+We load an R interface to Stan, `rstan`^[We have two R interface options. `rstan` has more functionality but development lags behind the latest releases of `Stan`. As an alternative, we may use `cmdstanr`, which currently has fewer functions, but takes advantage of whatever is in the new Stan release.]:
+
+```{r}
+require(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+Setup the data as a list for Stan:
+
+```{r}
+data(cars)
+dat   <- as.list(cars)
+dat$N <- NROW(cars)
+
+```
+
+Code the model, placing it into an R object we'll name `m`:
+
+```{stan output.var='m'}
+data {
+  int N;
+  vector[N] speed;
+  vector[N] dist;
+}
+parameters {
+  real beta_speed;
+  real<lower=0> sigma_speed;
+}
+model {
+  // priors
+  target += std_normal_lpdf(beta_speed);
+  target += exponential_lpdf(sigma_speed | 1);
+  
+  // likelihood
+  target += normal_lpdf(dist | beta_speed * speed, sigma_speed);
+}
+
+```
+
+Fit the model:
+
+```{r}
+fit <- sampling(m, data = dat)
+```
+
+Review model estimates:
+
+```{r, results=TRUE}
+print(fit)
+```
+
+# Chapter 1 The Golem of Prague
+
+_No models in main text to fit_.
+
+# Chapter 2 Small Worlds and Large Worlds
+
+## 2.4.4
+
+Setup the data:
+
+```{r}
+dat <- list(
+  W = 6L,
+  L = 3L
+  )
+```
+
+Code the model, saving as object named `m`:
+
+```{stan output.var='m'}
+data {
+  int W;
+  int L;
+}
+parameters {
+  real<lower=0,upper=1> p;
+}
+model {
+  // prior
+  target += uniform_lpdf(p | 0, 1);
+  
+  // likelihood 
+  target += binomial_lpmf( W | W + L,  p);
+}
+
+```
+
+Fit the model:
+
+```{r}
+globe_qa <- sampling(m, dat)
+```
+
+Summary of fit:
+
+```{r, results=TRUE}
+print(globe_qa)
+```
+
+# Chapter 3 Sampling the imaginary
+
+_No new models in main text to fit_.
+
+# Chapter 4 Geocentric models
+
+# 4.3.5
+
+Setup the data:
+
+```{r}
+library(rethinking)
+data(Howell1)
+d  <- Howell1
+d2 <- d[ d$age >= 18L, ]
+dat <- as.list(d2)
+dat$N <- NROW(d2)
+```
+
+Code the model, saving as object named `m`:
+
+```{stan output.var='m'}
+data {
+  int N;
+  vector[N] height;
+}
+parameters {
+  real mu;
+  real<lower=0, upper=50> sigma;
+}
+model {
+  // priors
+  target += normal_lpdf(mu | 178, 20);
+  target += uniform_lpdf(sigma | 0, 50);
+  
+  // likelihood
+  target += normal_lpdf(height | mu, sigma);
+}
+
+```
+
+Fit the model:
+
+```{r}
+m4_1 <- sampling(m, dat)
+```
+
+Summary of model:
+
+```{r, results=TRUE}
+print(m4_1)
+```
+
+Calculate the variance-covariance matrix:
+
+```{r, results=TRUE}
+post <- as.matrix(m4_1, pars = "lp__", include = FALSE)
+round( cov(post), 3)
+```
+
+
+Code and fit the next model:
+
+```{stan output.var='m'}
+data {
+  int N;
+  vector[N] height;
+}
+parameters {
+  real mu;
+  real<lower=0, upper=50> sigma;
+}
+model {
+  // priors
+  target += normal_lpdf(mu | 178, 0.1);
+  target += uniform_lpdf(sigma | 0, 50);
+  
+  // likelihood
+  target += normal_lpdf(height | mu, sigma);
+}
+
+```
+
+```{r}
+m4_2 <- sampling(m, dat)
+```
+
+Summary of model:
+
+```{r, results=TRUE}
+print(m4_2)
+```
+
+# 4.4.2
+
+Setup the (additional) data:
+
+```{r}
+dat$xbar <- mean(d2$weight)
+```
+
+Code the model, named as object `m` and fit:
+
+```{stan output.var='m'}
+data {
+  int N;
+  vector[N] height;
+  vector[N] weight;
+  real xbar;
+}
+parameters {
+  real a;
+  real b;
+  real<lower=0, upper=50> sigma;
+}
+model {
+  // linear model
+  vector[N] mu = a + b * (weight - xbar);
+  
+  // priors
+  target += normal_lpdf(a | 178, 20);
+  target += lognormal_lpdf(b | 0, 1);
+  target += uniform_lpdf(sigma | 0, 50);
+  
+  // likelihood
+  target += normal_lpdf(height | mu, sigma);
+}
+```
+
+Fit the model:
+
+```{r}
+m4_3 <- sampling(m, dat)
+```
+
+Code the next model:
+
+```{stan output.var='m'}
+data {
+  int N;
+  vector[N] height;
+  vector[N] weight;
+  real xbar;
+}
+parameters {
+  real a;
+  real log_b;
+  real<lower=0, upper=50> sigma;
+}
+model {
+  // linear model
+  vector[N] mu = a + exp(log_b) * (weight - xbar);
+  
+  // priors
+  target += normal_lpdf(a | 178, 20);
+  target += normal_lpdf(log_b | 0, 1);
+  target += uniform_lpdf(sigma | 0, 50);
+  
+  // likelihood
+  target += normal_lpdf(height | mu, sigma);
+}
+```
+
+```{r}
+m4_3b <- sampling(m, dat)
+```
+
+summary of estimates for model `m4_3`:
+
+```{r, results=TRUE}
+print(m4_3)
+```
+
+Calculate the variance-covariance matrix:
+
+```{r, results=TRUE}
+post <- as.matrix(m4_3, pars = "lp__", include = FALSE)
+round( cov(post), 3)
+```
+
